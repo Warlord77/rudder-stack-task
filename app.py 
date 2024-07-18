@@ -1,0 +1,60 @@
+from flask import Flask, request, jsonify
+import requests
+import json
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+app = Flask(__name__)
+
+# Environment variables for configuration
+SLACK_WEBHOOK_URL = os.getenv('SLACK_WEBHOOK_URL')
+PROMETHEUS_URL = os.getenv('PROMETHEUS_URL')
+
+# Function to enrich data
+def enrich_data(alert):
+    enriched_data = {}
+    # Example enrichment: Add CPU and Memory usage
+    enriched_data['cpu_usage'] = '75%'
+    enriched_data['memory_usage'] = '60%'
+    # Example enrichment: Fetch data from Prometheus
+    response = requests.get(f'{PROMETHEUS_URL}/data')
+    if response.status_code == 200:
+        enriched_data['prometheus_data'] = response.json()
+    # Example enrichment: Add heap dump data
+    enriched_data['heap_dump'] = 'Heap dump data example'
+    alert['enriched_data'] = enriched_data
+    return alert
+
+# Function to send alert to Slack
+def send_to_slack(alert):
+    # Standard message
+    message = (f"Alert: {alert['labels']['alertname']} - {alert['annotations']['summary']}\n"
+               f"Details: {alert['annotations']['description']}\n"
+               f"Enriched Data: {alert['enriched_data']}")
+    slack_data = {'text': message}
+    response = requests.post(SLACK_WEBHOOK_URL, data=json.dumps(slack_data), headers={'Content-Type': 'application/json'})
+    if response.status_code != 200:
+        raise ValueError(f"Request to Slack returned an error {response.status_code}, the response is:\n{response.text}")
+
+    # Additional action based on alert severity
+    if alert['labels']['severity'] == 'CRITICAL':
+        critical_message = f"CRITICAL ALERT: Immediate attention required for {alert['labels']['alertname']}!"
+        slack_data = {'text': critical_message}
+        response = requests.post(SLACK_WEBHOOK_URL, data=json.dumps(slack_data), headers={'Content-Type': 'application/json'})
+        if response.status_code != 200:
+            raise ValueError(f"Request to Slack returned an error {response.status_code}, the response is:\n{response.text}")
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    alert = request.json
+    # Step 1: Enrich the alert data
+    alert = enrich_data(alert)
+    # Step 2: Take action (send to Slack)
+    send_to_slack(alert)
+    return jsonify({"status": "success"}), 200
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)

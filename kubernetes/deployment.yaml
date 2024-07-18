@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: alert-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: alert-manager
+  template:
+    metadata:
+      labels:
+        app: alert-manager
+    spec:
+      containers:
+      - name: alert-manager
+        image: your-dockerhub-username/alert-manager:latest
+        ports:
+        - containerPort: 5000
+        env:
+        - name: SLACK_WEBHOOK_URL
+          valueFrom:
+            secretKeyRef:
+              name: slack-webhook-secret
+              key: SLACK_WEBHOOK_URL
+        - name: PROMETHEUS_URL
+          valueFrom:
+            configMapKeyRef:
+              name: prometheus-url-config
+              key: PROMETHEUS_URL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: alert-manager
+spec:
+  selector:
+    app: alert-manager
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000
